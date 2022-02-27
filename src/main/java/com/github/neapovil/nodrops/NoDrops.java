@@ -18,9 +18,6 @@ import dev.jorel.commandapi.arguments.BooleanArgument;
 import dev.jorel.commandapi.arguments.ItemStackArgument;
 import dev.jorel.commandapi.arguments.LiteralArgument;
 import dev.jorel.commandapi.arguments.StringArgument;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
 
 public final class NoDrops extends JavaPlugin implements Listener
 {
@@ -142,16 +139,7 @@ public final class NoDrops extends JavaPlugin implements Listener
 
         if (!safedrops.contains(event.getItemDrop().getItemStack().getType().toString()))
         {
-            event.setCancelled(true);
-
-            final Component component = Component.text("ERROR! ", NamedTextColor.DARK_RED)
-                    .decoration(TextDecoration.BOLD, true);
-            final Component component1 = Component.text("you can't drop this item!", NamedTextColor.GRAY)
-                    .decoration(TextDecoration.BOLD, false);
-
-            final Component built = component.append(component1);
-
-            event.getPlayer().sendMessage(built);
+            event.getItemDrop().remove();
         }
     }
 }
