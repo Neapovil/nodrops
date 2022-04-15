@@ -14,6 +14,7 @@ import com.electronwill.nightconfig.core.file.FileConfig;
 
 import dev.jorel.commandapi.CommandAPI;
 import dev.jorel.commandapi.CommandAPICommand;
+import dev.jorel.commandapi.arguments.ArgumentSuggestions;
 import dev.jorel.commandapi.arguments.BooleanArgument;
 import dev.jorel.commandapi.arguments.ItemStackArgument;
 import dev.jorel.commandapi.arguments.LiteralArgument;
@@ -78,10 +79,10 @@ public final class NoDrops extends JavaPlugin implements Listener
                 .withPermission("nodrops.command")
                 .withArguments(new LiteralArgument("whitelist"))
                 .withArguments(new LiteralArgument("remove"))
-                .withArguments(new StringArgument("itemstack").replaceSuggestions(info -> {
+                .withArguments(new StringArgument("itemstack").replaceSuggestions(ArgumentSuggestions.strings(info -> {
                     final List<String> items = this.config.get("general.safe_drops");
                     return items.toArray(String[]::new);
-                }))
+                })))
                 .executes((sender, args) -> {
                     final String itemstack = (String) args[0];
                     final List<String> items = this.config.get("general.safe_drops");
