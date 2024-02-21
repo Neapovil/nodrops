@@ -1,8 +1,11 @@
 package com.github.neapovil.nodrops;
 
-import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.List;
 
+import org.bukkit.Material;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
@@ -10,33 +13,38 @@ import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import com.electronwill.nightconfig.core.file.FileConfig;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 
 import dev.jorel.commandapi.CommandAPI;
 import dev.jorel.commandapi.CommandAPICommand;
-import dev.jorel.commandapi.arguments.ArgumentSuggestions;
 import dev.jorel.commandapi.arguments.BooleanArgument;
 import dev.jorel.commandapi.arguments.ItemStackArgument;
 import dev.jorel.commandapi.arguments.LiteralArgument;
-import dev.jorel.commandapi.arguments.StringArgument;
+import dev.jorel.commandapi.arguments.SafeSuggestions;
+import net.kyori.adventure.text.Component;
 
 public final class NoDrops extends JavaPlugin implements Listener
 {
     private static NoDrops instance;
-    private FileConfig config;
+    private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
+    private Config config;
 
     @Override
     public void onEnable()
     {
         instance = this;
 
-        this.saveResource("config.toml", false);
+        this.saveResource("config.json", false);
 
-        this.config = FileConfig.builder(new File(this.getDataFolder(), "config.toml"))
-                .autoreload()
-                .autosave()
-                .build();
-        this.config.load();
+        try
+        {
+            this.load();
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace();
+        }
 
         this.getServer().getPluginManager().registerEvents(this, this);
 
@@ -45,11 +53,20 @@ public final class NoDrops extends JavaPlugin implements Listener
                 .withArguments(new LiteralArgument("enabled"))
                 .withArguments(new BooleanArgument("bool"))
                 .executes((sender, args) -> {
-                    final boolean bool = (boolean) args[0];
+                    final boolean bool = (boolean) args.get("bool");
 
-                    this.config.set("general.enabled", bool);
+                    try
+                    {
+                        this.config.enabled = bool;
+                        this.save();
 
-                    sender.sendMessage("NoDrops enabled: " + bool);
+                        sender.sendMessage("NoDrops status changed to: " + bool);
+                    }
+                    catch (IOException e)
+                    {
+                        this.getLogger().severe(e.getMessage());
+                        throw CommandAPI.failWithString("Unable to toggle.");
+                    }
                 })
                 .register();
 
@@ -57,21 +74,28 @@ public final class NoDrops extends JavaPlugin implements Listener
                 .withPermission("nodrops.command")
                 .withArguments(new LiteralArgument("whitelist"))
                 .withArguments(new LiteralArgument("add"))
-                .withArguments(new ItemStackArgument("itemstack"))
+                .withArguments(new ItemStackArgument("itemStack"))
                 .executes((sender, args) -> {
-                    final String itemstack = (String) ((ItemStack) args[0]).getType().toString();
-                    final List<String> items = this.config.get("general.safe_drops");
+                    final ItemStack itemstack = (ItemStack) args.get("itemStack");
 
-                    if (items.contains(itemstack))
+                    if (this.hasItem(itemstack))
                     {
-                        CommandAPI.fail(itemstack + " already in whitelist!");
+                        throw CommandAPI.failWithString("Item is already whitelisted");
                     }
 
-                    items.add(itemstack);
+                    try
+                    {
+                        this.config.whitelist.add(itemstack.getType());
+                        this.save();
 
-                    this.config.set("general.safe_drops", items);
-
-                    sender.sendMessage(itemstack + " added to the whitelist");
+                        final Component hover = itemstack.displayName().hoverEvent(itemstack.asHoverEvent());
+                        sender.sendMessage(Component.text("Item added to the whitelist: ").append(hover));
+                    }
+                    catch (IOException e)
+                    {
+                        this.getLogger().severe(e.getMessage());
+                        throw CommandAPI.failWithString("Unable to add.");
+                    }
                 })
                 .register();
 
@@ -79,24 +103,30 @@ public final class NoDrops extends JavaPlugin implements Listener
                 .withPermission("nodrops.command")
                 .withArguments(new LiteralArgument("whitelist"))
                 .withArguments(new LiteralArgument("remove"))
-                .withArguments(new StringArgument("itemstack").replaceSuggestions(ArgumentSuggestions.strings(info -> {
-                    final List<String> items = this.config.get("general.safe_drops");
-                    return items.toArray(String[]::new);
+                .withArguments(new ItemStackArgument("itemStack").replaceSafeSuggestions(SafeSuggestions.suggest(info -> {
+                    return this.config.whitelist.stream().map(i -> new ItemStack(i)).toArray(ItemStack[]::new);
                 })))
                 .executes((sender, args) -> {
-                    final String itemstack = (String) args[0];
-                    final List<String> items = this.config.get("general.safe_drops");
+                    final ItemStack itemstack = (ItemStack) args.get("itemStack");
 
-                    if (!items.contains(itemstack))
+                    if (!this.hasItem(itemstack))
                     {
-                        CommandAPI.fail(itemstack + " is not whitelisted!");
+                        throw CommandAPI.failWithString("Item is not whitelisted");
                     }
 
-                    items.removeIf(i -> i.equals(itemstack));
+                    try
+                    {
+                        this.config.whitelist.removeIf(i -> i.equals(itemstack.getType()));
+                        this.save();
 
-                    this.config.set("general.safe_drops", items);
-
-                    sender.sendMessage(itemstack + " removed from the whitelist");
+                        final Component hover = itemstack.displayName().hoverEvent(itemstack.asHoverEvent());
+                        sender.sendMessage(Component.text("Item removed from whitelist: ").append(hover));
+                    }
+                    catch (IOException e)
+                    {
+                        this.getLogger().severe(e.getMessage());
+                        throw CommandAPI.failWithString("Unable to remove.");
+                    }
                 })
                 .register();
     }
@@ -106,20 +136,15 @@ public final class NoDrops extends JavaPlugin implements Listener
     {
     }
 
-    public static NoDrops getInstance()
+    public static NoDrops instance()
     {
         return instance;
-    }
-
-    public boolean isNoDropsEnabled()
-    {
-        return this.config.get("general.enabled");
     }
 
     @EventHandler
     private void playerDeath(PlayerDeathEvent event)
     {
-        if (!this.isNoDropsEnabled())
+        if (!this.config.enabled)
         {
             return;
         }
@@ -131,16 +156,37 @@ public final class NoDrops extends JavaPlugin implements Listener
     @EventHandler
     private void playerDropItem(PlayerDropItemEvent event)
     {
-        if (!this.isNoDropsEnabled())
+        if (!this.config.enabled)
         {
             return;
         }
 
-        final List<String> safedrops = this.config.get("general.safe_drops");
-
-        if (!safedrops.contains(event.getItemDrop().getItemStack().getType().toString()))
+        if (!this.hasItem(event.getItemDrop().getItemStack()))
         {
             event.getItemDrop().remove();
         }
+    }
+
+    private void load() throws IOException
+    {
+        final String string = Files.readString(this.getDataFolder().toPath().resolve("config.json"));
+        this.config = this.gson.fromJson(string, Config.class);
+    }
+
+    private void save() throws IOException
+    {
+        final String string = this.gson.toJson(this.config);
+        Files.write(this.getDataFolder().toPath().resolve("config.json"), string.getBytes());
+    }
+
+    private boolean hasItem(ItemStack itemStack)
+    {
+        return this.config.whitelist.contains(itemStack.getType());
+    }
+
+    class Config
+    {
+        public boolean enabled;
+        public List<Material> whitelist = new ArrayList<>();
     }
 }

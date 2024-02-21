@@ -1,7 +1,7 @@
 name: NoDrops
 main: com.github.neapovil.nodrops.NoDrops
 version: 1.0.0
-api-version: 1.13
+api-version: 1.19
 author: Neapovil
 website: https://github.com/Neapovil/nodrops
 depend:
